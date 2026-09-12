@@ -1,202 +1,73 @@
 package com.eye.imagelaberlecropperkotlin
 
-import android.Manifest
-import android.content.ContentValues.TAG
 import android.content.Intent
-import android.content.pm.PackageManager
-import android.graphics.BitmapFactory
-import android.graphics.Rect
 import android.net.Uri
-import android.os.Build
 import android.os.Bundle
-import android.provider.MediaStore
-import android.util.Log
-import android.widget.ImageView
-import android.widget.TextView
+import android.provider.DocumentsContract
+import android.widget.Button
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.content.ContextCompat
-import com.canhub.cropper.CropImageContract
-import com.canhub.cropper.CropImageContractOptions
-import com.canhub.cropper.CropImageOptions
-import org.w3c.dom.Node
-import java.io.File
-import javax.xml.parsers.DocumentBuilderFactory
 
 class MainActivity : AppCompatActivity() {
-    private var userpic: ImageView? = null
-    private val STORAGE_REQUEST = 200
-    private var PICK_XML_REQUEST_CODE = 23
-    private var storagePermission: Array<String>? = null
-    private var click: TextView? = null
-    private var importXML: TextView? = null
-    private var xmlString = "empty"
+    private var folderUri: Uri? = null
+    private val PREFS_NAME = "app_prefs"
+    private val KEY_FOLDER_URI = "folder_uri"
 
-    private val cropImageLauncher = registerForActivityResult(CropImageContract()) { result ->
-        if (result.isSuccessful) {
-            val imageUri = result.uriContent
-            val cropRect = result.cropRect
-            val originalUri = result.originalUri
-
-            if (imageUri != null && cropRect != null) {
-                processCroppedImage(imageUri, originalUri, cropRect)
-            } else {
-                Toast.makeText(this, "Gagal mendapatkan hasil crop", Toast.LENGTH_SHORT).show()
-            }
-        } else {
-            Log.e(TAG, "Crop error: ${result.error?.message}")
-            Toast.makeText(this, "Crop dibatalkan atau error", Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    private fun parseXmlToString(uri: Uri) {
-        val inputStream = contentResolver.openInputStream(uri) ?: return
-        val builderFactory = DocumentBuilderFactory.newInstance()
-        val documentBuilder = builderFactory.newDocumentBuilder()
-        val document = documentBuilder.parse(inputStream)
-
-        val output = StringBuilder()
-        parseNode(document.documentElement, output)
-        xmlString = output.toString()
-    }
-
-    private fun parseNode(node: Node, output: StringBuilder) {
-        when (node.nodeType) {
-            Node.ELEMENT_NODE -> {
-                output.append("<${node.nodeName}>")
-                val childNodes = node.childNodes
-                for (i in 0 until childNodes.length) parseNode(childNodes.item(i), output)
-                output.append("</${node.nodeName}>")
-            }
-            Node.TEXT_NODE -> output.append(node.nodeValue)
+    private val folderPickerLauncher = registerForActivityResult(
+        ActivityResultContracts.OpenDocumentTree()
+    ) { uri: Uri? ->
+        uri?.let {
+            val takeFlags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+            contentResolver.takePersistableUriPermission(it, takeFlags)
+            folderUri = it
+            getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit().putString(KEY_FOLDER_URI, it.toString()).apply()
+            Toast.makeText(this, "Folder dipilih", Toast.LENGTH_SHORT).show()
         }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
-        
-        click = findViewById(R.id.click)
-        importXML = findViewById(R.id.importxml)
-        userpic = findViewById(R.id.set_profile_image)
 
-        click?.setOnClickListener { showImagePicDialog() }
-        importXML?.setOnClickListener {
-            if (!checkStoragePermission()) requestStoragePermission() else showFileXmlDialog()
-        }
-    }
+        val btnSelect = findViewById<Button>(R.id.btn_select_folder)
+        val btnStart = findViewById<Button>(R.id.btn_start_labeling)
 
-    private fun showFileXmlDialog() {
-        val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
-            setTitle("Pick XML file")
-            type = "text/xml"
-        }
-        startActivityForResult(intent, PICK_XML_REQUEST_CODE)
-    }
+        folderUri = getSharedPreferences(PREFS_NAME, MODE_PRIVATE).getString(KEY_FOLDER_URI, null)?.let { Uri.parse(it) }
 
-    private fun showImagePicDialog() {
-        AlertDialog.Builder(this)
-            .setTitle("Pick Image From")
-            .setPositiveButton("Gallery") { _, _ ->
-                if (!checkStoragePermission()) requestStoragePermission() else pickFromGallery()
-            }.create().show()
-    }
-
-    private fun checkStoragePermission(): Boolean {
-        val perm = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) Manifest.permission.READ_MEDIA_IMAGES else Manifest.permission.READ_EXTERNAL_STORAGE
-        return ContextCompat.checkSelfPermission(this, perm) == PackageManager.PERMISSION_GRANTED
-    }
-
-    private fun pickFromGallery() {
-        cropImageLauncher.launch(
-            CropImageContractOptions(
-                uri = null, 
-                cropImageOptions = CropImageOptions(cropMenuCropButtonTitle = "Label")
-            )
-        )
-    }
-
-    private fun requestStoragePermission() {
-        storagePermission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            arrayOf(Manifest.permission.READ_MEDIA_IMAGES)
-        } else {
-            arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
-        }
-        requestPermissions(storagePermission!!, STORAGE_REQUEST)
-    }
-
-    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == STORAGE_REQUEST && grantResults.isNotEmpty()) {
-            if (grantResults[0] == PackageManager.PERMISSION_GRANTED) pickFromGallery()
-            else Toast.makeText(this, "Storage permission denied", Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    @Deprecated("Deprecated in Java")
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == PICK_XML_REQUEST_CODE && resultCode == RESULT_OK) {
-            data?.data?.let { uri ->
-                parseXmlToString(uri)
-                var fileName: String? = null
-                val cursor = contentResolver.query(uri, arrayOf(MediaStore.Downloads.DISPLAY_NAME), null, null, null)
-                if (cursor != null && cursor.moveToFirst()) {
-                    val nameIndex = cursor.getColumnIndex(MediaStore.Downloads.DISPLAY_NAME)
-                    if (nameIndex >= 0) fileName = cursor.getString(nameIndex)
-                    cursor.close()
+        btnSelect.setOnClickListener { folderPickerLauncher.launch(null) }
+        btnStart.setOnClickListener {
+            if (folderUri != null) {
+                val images = scanFolderForImages(folderUri!!)
+                if (images.isNotEmpty()) {
+                    startActivity(Intent(this, LabelingActivity::class.java).apply {
+                        putParcelableArrayListExtra("image_uris", ArrayList(images))
+                        putExtra("folder_uri", folderUri.toString())
+                    })
+                } else {
+                    Toast.makeText(this, "Tidak ada gambar di folder ini", Toast.LENGTH_SHORT).show()
                 }
-                Toast.makeText(this, "XML file successfully parsed", Toast.LENGTH_SHORT).show()
-                
-                val intent = Intent(this, ShowLabel::class.java)
-                intent.putExtra("xmlString", xmlString)
-                intent.putExtra("xmlName", fileName)
-                intent.putExtra("xmlUri", uri)
-                startActivity(intent)
+            } else {
+                Toast.makeText(this, "Pilih folder terlebih dahulu", Toast.LENGTH_SHORT).show()
             }
         }
     }
 
-    private fun processCroppedImage(imageUri: Uri, originalUri: Uri?, cropRect: Rect) {
-        val origOpts = BitmapFactory.Options()
-        val originalStream = originalUri?.let { contentResolver.openInputStream(it) }
-        BitmapFactory.decodeStream(originalStream, null, origOpts)
-        originalStream?.close()
-
-        val opts = BitmapFactory.Options()
-        opts.inJustDecodeBounds = true
-        val imageStream = contentResolver.openInputStream(imageUri)
-        BitmapFactory.decodeStream(imageStream, null, opts)
-        imageStream?.close()
-
-        val fileName = originalUri?.path ?: imageUri.path
-        var fileParentPath: String? = "null"
-        var filePath: String? = "null"
-        var fileNameOnly: String? = "null"
-
-        if (fileName != null) {
-            val file = File(fileName)
-            fileParentPath = file.parentFile?.name
-            filePath = file.parent
-            fileNameOnly = file.name
+    private fun scanFolderForImages(treeUri: Uri): List<Uri> {
+        val imageUris = mutableListOf<Uri>()
+        val docId = DocumentsContract.getTreeDocumentId(treeUri)
+        val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, docId)
+        val projection = arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID, DocumentsContract.Document.COLUMN_MIME_TYPE)
+        
+        contentResolver.query(childrenUri, projection, null, null, null)?.use { cursor ->
+            val idIndex = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
+            val mimeIndex = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_MIME_TYPE)
+            while (cursor.moveToNext()) {
+                if (cursor.getString(mimeIndex)?.startsWith("image/") == true) {
+                    imageUris.add(DocumentsContract.buildDocumentUriUsingTree(treeUri, cursor.getString(idIndex)))
+                }
+            }
         }
-
-        val intent = Intent(this, CompleteActivity::class.java).apply {
-            putExtra("imageUri", imageUri.toString())
-            putExtra("minX", cropRect.left.toFloat())
-            putExtra("minY", cropRect.top.toFloat())
-            putExtra("maxX", cropRect.right.toFloat())
-            putExtra("maxY", cropRect.bottom.toFloat())
-            putExtra("height", opts.outHeight)
-            putExtra("orgHeight", origOpts.outHeight)
-            putExtra("width", opts.outWidth)
-            putExtra("orgWidth", origOpts.outWidth)
-            putExtra("folder", fileParentPath)
-            putExtra("path", filePath)
-            putExtra("fileName", fileNameOnly)
-        }
-        startActivity(intent)
+        return imageUris
     }
 }
