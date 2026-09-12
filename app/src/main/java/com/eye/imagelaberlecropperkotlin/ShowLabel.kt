@@ -14,8 +14,9 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
-import com.canhub.cropper.CropImage
-import com.canhub.cropper.CropImage.CROP_IMAGE_ACTIVITY_REQUEST_CODE
+import com.canhub.cropper.CropImageContract
+import com.canhub.cropper.CropImageContractOptions
+import com.canhub.cropper.CropImageOptions
 
 class ShowLabel : AppCompatActivity() {
     private var labeledImage: ImageView? = null
@@ -25,11 +26,24 @@ class ShowLabel : AppCompatActivity() {
     private lateinit var rect: Rect
 
     private val pickImageLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
-        if (uri != null) {
-            startCropActivity(uri, rect)
-        } else {
+        if (uri != null) startCropActivity(uri, rect)
+        else {
             Toast.makeText(this, "Gambar dibatalkan", Toast.LENGTH_SHORT).show()
             finish()
+        }
+    }
+
+    private val cropImageLauncher = registerForActivityResult(CropImageContract()) { result ->
+        if (result.isSuccessful) {
+            val resultUri = result.uriContent
+            val cropRect = result.cropRect
+            if (resultUri != null && cropRect != null) {
+                labeledImage?.setImageURI(resultUri)
+                textView?.visibility = View.GONE
+                updateXmlFile(cropRect)
+            }
+        } else {
+            Toast.makeText(this, "Crop gagal atau dibatalkan", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -56,12 +70,9 @@ class ShowLabel : AppCompatActivity() {
         Log.d(TAG, "Target File: $targetFileName, Rect: $rect")
 
         val foundUri = findImageInMediaStore(targetFileName)
-
         if (foundUri != null) {
-            Log.d(TAG, "Gambar ditemukan otomatis: $foundUri")
             startCropActivity(foundUri, rect)
         } else {
-            Log.w(TAG, "Gambar tidak ditemukan otomatis. Meminta user memilih manual.")
             Toast.makeText(this, "Pilih gambar '$targetFileName' dari galeri", Toast.LENGTH_LONG).show()
             pickImageLauncher.launch("image/*")
         }
@@ -69,14 +80,10 @@ class ShowLabel : AppCompatActivity() {
 
     private fun findImageInMediaStore(fileName: String): Uri? {
         val projection = arrayOf(MediaStore.Images.Media._ID)
-        val selection = "${MediaStore.Images.Media.DISPLAY_NAME} = ?"
-        val selectionArgs = arrayOf(fileName)
-
         val cursor: Cursor? = contentResolver.query(
-            MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-            projection, selection, selectionArgs, null
+            MediaStore.Images.Media.EXTERNAL_CONTENT_URI, projection,
+            "${MediaStore.Images.Media.DISPLAY_NAME} = ?", arrayOf(fileName), null
         )
-
         var imageUri: Uri? = null
         cursor?.use {
             if (it.moveToFirst()) {
@@ -89,58 +96,39 @@ class ShowLabel : AppCompatActivity() {
 
     private fun startCropActivity(imageUri: Uri, cropRect: Rect) {
         try {
-            CropImage.activity(imageUri)
-                .setCropMenuCropButtonTitle("CHANGE")
-                .setActivityTitle("Image Labeled")
-                .setAutoZoomEnabled(false)
-                .setInitialCropWindowRectangle(cropRect)
-                .start(this@ShowLabel)
+            cropImageLauncher.launch(
+                CropImageContractOptions(
+                    uri = imageUri,
+                    cropImageOptions = CropImageOptions(
+                        cropMenuCropButtonTitle = "CHANGE",
+                        activityTitle = "Image Labeled",
+                        autoZoomEnabled = false,
+                        initialCropWindowRectangle = cropRect
+                    )
+                )
+            )
         } catch (e: Exception) {
             Log.e(TAG, "Crop Error: ${e.message}")
-            Toast.makeText(this, "Gagal membuka crop: ${e.message}", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Gagal membuka crop", Toast.LENGTH_SHORT).show()
         }
     }
 
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
-
-        if (requestCode == CROP_IMAGE_ACTIVITY_REQUEST_CODE && resultCode == RESULT_OK) {
-            val result = CropImage.getActivityResult(data) ?: return
-            labeledImage?.setImageURI(result.uri)
-            textView?.visibility = View.GONE
-
-            val cropRect = result.cropRect
-            val newBndbox = "<bndbox>\n<xmin>${cropRect.left}</xmin>\n<ymin>${cropRect.top}</ymin>\n<xmax>${cropRect.right}</xmax>\n<ymax>${cropRect.bottom}</ymax>\n"
-
-            updateXmlFile(newBndbox)
-        }
-    }
-
-    private fun updateXmlFile(newBndbox: String) {
-        if (xmlUri == null) {
-            Toast.makeText(this, "URI XML tidak valid, tidak bisa menyimpan", Toast.LENGTH_SHORT).show()
-            return
-        }
-
+    private fun updateXmlFile(cropRect: Rect) {
+        if (xmlUri == null) return
         try {
             val oldContent = contentResolver.openInputStream(xmlUri!!)?.bufferedReader()?.use { it.readText() } ?: ""
-            
             val startIndex = oldContent.indexOf("<bndbox>")
             val endIndex = oldContent.indexOf("</bndbox>")
 
             if (startIndex != -1 && endIndex != -1) {
+                val newBndbox = "<bndbox>\n<xmin>${cropRect.left}</xmin>\n<ymin>${cropRect.top}</ymin>\n<xmax>${cropRect.right}</xmax>\n<ymax>${cropRect.bottom}</ymax>\n"
                 val updatedContent = oldContent.replaceRange(startIndex, endIndex + "</bndbox>".length, newBndbox)
                 
-                contentResolver.openOutputStream(xmlUri!!)?.use { outputStream ->
-                    outputStream.write(updatedContent.toByteArray())
-                }
+                contentResolver.openOutputStream(xmlUri!!)?.use { it.write(updatedContent.toByteArray()) }
                 Toast.makeText(this, "XML berhasil diupdate!", Toast.LENGTH_SHORT).show()
-            } else {
-                Toast.makeText(this, "Format XML tidak memiliki tag <bndbox>", Toast.LENGTH_SHORT).show()
             }
         } catch (e: Exception) {
             Log.e(TAG, "Gagal menulis XML: ${e.message}")
-            Toast.makeText(this, "Gagal menyimpan: ${e.message}", Toast.LENGTH_LONG).show()
         }
     }
 }

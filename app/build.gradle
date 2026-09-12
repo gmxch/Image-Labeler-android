@@ -44,7 +44,7 @@ dependencies {
 
     //image cropper
     implementation "com.vanniktech:android-image-cropper:4.5.0"
-    implementation 'com.squareup.picasso:picasso:2.5.2'
+    implementation 'com.squareup.picasso:picasso:2.8'
 
     //xml parser
     implementation 'xerces:xercesImpl:2.12.0'
