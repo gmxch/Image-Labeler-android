@@ -40,8 +40,10 @@ class MainActivity : AppCompatActivity() {
             if (folderUri != null) {
                 val images = scanFolderForImages(folderUri!!)
                 if (images.isNotEmpty()) {
+                    val uriList = ArrayList<Uri>(images)
+                    
                     startActivity(Intent(this, LabelingActivity::class.java).apply {
-                        putParcelableArrayListExtra("image_uris", ArrayList(images))
+                        putParcelableArrayListExtra("image_uris", uriList)
                         putExtra("folder_uri", folderUri.toString())
                     })
                 } else {
