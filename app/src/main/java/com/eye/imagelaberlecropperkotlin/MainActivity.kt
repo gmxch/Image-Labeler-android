@@ -18,11 +18,15 @@ class MainActivity : AppCompatActivity() {
         ActivityResultContracts.OpenDocumentTree()
     ) { uri: Uri? ->
         uri?.let {
-            val takeFlags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-            contentResolver.takePersistableUriPermission(it, takeFlags)
-            folderUri = it
-            getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit().putString(KEY_FOLDER_URI, it.toString()).apply()
-            Toast.makeText(this, "Folder dipilih", Toast.LENGTH_SHORT).show()
+            try {
+                val takeFlags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                contentResolver.takePersistableUriPermission(it, takeFlags)
+                folderUri = it
+                getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit().putString(KEY_FOLDER_URI, it.toString()).apply()
+                Toast.makeText(this, "Folder dipilih", Toast.LENGTH_SHORT).show()
+            } catch (e: Exception) {
+                Toast.makeText(this, "Error izin folder: ${e.message}", Toast.LENGTH_LONG).show()
+            }
         }
     }
 
@@ -36,21 +40,26 @@ class MainActivity : AppCompatActivity() {
         folderUri = getSharedPreferences(PREFS_NAME, MODE_PRIVATE).getString(KEY_FOLDER_URI, null)?.let { Uri.parse(it) }
 
         btnSelect.setOnClickListener { folderPickerLauncher.launch(null) }
+        
         btnStart.setOnClickListener {
-            if (folderUri != null) {
-                val images = scanFolderForImages(folderUri!!)
-                if (images.isNotEmpty()) {
-                    val uriList = ArrayList<Uri>(images)
-                    
-                    startActivity(Intent(this, LabelingActivity::class.java).apply {
-                        putParcelableArrayListExtra("image_uris", uriList)
-                        putExtra("folder_uri", folderUri.toString())
-                    })
+            try {
+                if (folderUri != null) {
+                    val images = scanFolderForImages(folderUri!!)
+                    if (images.isNotEmpty()) {
+                        val uriList = ArrayList<Uri>(images)
+                        startActivity(Intent(this, LabelingActivity::class.java).apply {
+                            putParcelableArrayListExtra("image_uris", uriList)
+                            putExtra("folder_uri", folderUri.toString())
+                        })
+                    } else {
+                        Toast.makeText(this, "Tidak ada gambar di folder ini", Toast.LENGTH_SHORT).show()
+                    }
                 } else {
-                    Toast.makeText(this, "Tidak ada gambar di folder ini", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, "Pilih folder terlebih dahulu", Toast.LENGTH_SHORT).show()
                 }
-            } else {
-                Toast.makeText(this, "Pilih folder terlebih dahulu", Toast.LENGTH_SHORT).show()
+            } catch (e: Exception) {
+                Toast.makeText(this, "CRASH: ${e.message}", Toast.LENGTH_LONG).show()
+                android.util.Log.e("MainActivity", "Error", e)
             }
         }
     }
