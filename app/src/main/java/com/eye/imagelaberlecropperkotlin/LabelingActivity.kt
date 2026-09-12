@@ -1,6 +1,7 @@
 package com.eye.imagelaberlecropperkotlin
 
 import android.content.Context
+import android.content.Intent
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Build
@@ -196,7 +197,7 @@ class LabelingActivity : AppCompatActivity() {
                 crashFile.writeText("=== SAVE CRASH LOG ===\n$log")
             } catch (ex: Exception) { }
             
-            Toast.makeText(this, "❌ Gagal simpan: ${e.message}", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "Gagal simpan: ${e.message}", Toast.LENGTH_LONG).show()
         }
     }
 }
