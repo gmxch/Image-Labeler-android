@@ -112,6 +112,7 @@ class MainActivity : AppCompatActivity() {
     private fun pickFromGallery() {
         cropImageLauncher.launch(
             CropImageContractOptions(
+                uri = null, 
                 cropImageOptions = CropImageOptions(cropMenuCropButtonTitle = "Label")
             )
         )
@@ -152,7 +153,7 @@ class MainActivity : AppCompatActivity() {
                 val intent = Intent(this, ShowLabel::class.java)
                 intent.putExtra("xmlString", xmlString)
                 intent.putExtra("xmlName", fileName)
-                intent.putExtra("xmlUri", uri) 
+                intent.putExtra("xmlUri", uri)
                 startActivity(intent)
             }
         }
