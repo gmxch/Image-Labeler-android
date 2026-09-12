@@ -26,6 +26,8 @@ class DrawingView @JvmOverloads constructor(context: Context, attrs: AttributeSe
     private val paintBox = Paint().apply { color = Color.RED; style = Paint.Style.STROKE; strokeWidth = 4f }
     private val paintText = Paint().apply { color = Color.RED; textSize = 40f; style = Paint.Style.FILL }
     private val paintCurrent = Paint().apply { color = Color.BLUE; style = Paint.Style.STROKE; strokeWidth = 4f }
+    
+    private val paintCheckerboard = Paint().apply { style = Paint.Style.FILL }
 
     private val gestureDetector = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
         override fun onLongPress(e: MotionEvent) {
@@ -100,6 +102,25 @@ class DrawingView @JvmOverloads constructor(context: Context, attrs: AttributeSe
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
+        
+        val tileSize = 40f
+        val color1 = Color.parseColor("#F5F5F5")
+        val color2 = Color.parseColor("#EBEBEB")
+        var y = 0f
+        var row = 0
+        while (y < height) {
+            var x = 0f
+            var col = 0
+            while (x < width) {
+                paintCheckerboard.color = if ((row + col) % 2 == 0) color1 else color2
+                canvas.drawRect(x, y, x + tileSize, y + tileSize, paintCheckerboard)
+                x += tileSize
+                col++
+            }
+            y += tileSize
+            row++
+        }
+
         bitmap?.let { bmp ->
             canvas.drawBitmap(bmp, null, RectF(offsetX, offsetY, offsetX + bmp.width * scaleX, offsetY + bmp.height * scaleY), null)
             val drawBox = { box: BoundingBox, paint: Paint, label: String? ->
