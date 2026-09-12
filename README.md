@@ -40,6 +40,7 @@ This app aims to simplify the process of creating labeled data for object detect
 
 <video src="https://raw.githubusercontent.com/gmxch/Image-Labeler-android/master/demo/screen-20260913-042259.mp4" controls width="100%" max-width="600px"></video>
 
+<video src="https://raw.githubusercontent.com/gmxch/Image-Labeler-android/master/demo/screen-20260913-042334.mp4" controls width="100%" max-width="600px"></video>
 
 ## Features
 -  **Batch Folder Processing**: Select a folder once, label all images inside sequentially.
