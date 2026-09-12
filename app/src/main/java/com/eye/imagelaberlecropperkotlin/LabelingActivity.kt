@@ -15,6 +15,8 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.documentfile.provider.DocumentFile
+import java.io.File
 
 class LabelingActivity : AppCompatActivity() {
     private lateinit var drawingView: DrawingView
@@ -58,7 +60,6 @@ class LabelingActivity : AppCompatActivity() {
             }
             findViewById<Button>(R.id.btn_save).setOnClickListener { 
                 saveLabels()
-                Toast.makeText(this, "Label disimpan!", Toast.LENGTH_SHORT).show() 
             }
 
             drawingView.onBoxDrawn = { rect -> showClassDialog(rect) }
@@ -67,8 +68,6 @@ class LabelingActivity : AppCompatActivity() {
             loadImage(0)
         } catch (e: Exception) {
             Toast.makeText(this, "CRASH di Labeling: ${e.message}", Toast.LENGTH_LONG).show()
-            android.util.Log.e("LabelingActivity", "Error", e)
-            finish()
         }
     }
 
@@ -80,12 +79,10 @@ class LabelingActivity : AppCompatActivity() {
             
             contentResolver.openInputStream(imageUris[index])?.use { stream ->
                 val bmp = BitmapFactory.decodeStream(stream)
-                
                 if (bmp == null) {
-                    Toast.makeText(this, "Gagal memuat gambar (format tidak didukung/rusak)", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, "Gagal memuat gambar", Toast.LENGTH_SHORT).show()
                     return@use
                 }
-                
                 imgWidth = bmp.width
                 imgHeight = bmp.height
                 drawingView.setBitmap(bmp)
@@ -95,7 +92,7 @@ class LabelingActivity : AppCompatActivity() {
                 }
             }
         } catch (e: Exception) {
-            Toast.makeText(this, "CRASH saat load gambar: ${e.message}", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "CRASH load gambar: ${e.message}", Toast.LENGTH_LONG).show()
         }
     }
 
@@ -132,21 +129,20 @@ class LabelingActivity : AppCompatActivity() {
             val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
             imm.showSoftInput(input, InputMethodManager.SHOW_IMPLICIT)
         } catch (e: Exception) {
-            Toast.makeText(this, "CRASH di Dialog: ${e.message}", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "CRASH Dialog: ${e.message}", Toast.LENGTH_LONG).show()
         }
     }
 
     private fun saveAndMove(direction: Int) {
-        try {
-            saveLabels()
-            loadImage(currentIndex + direction)
-        } catch (e: Exception) {
-            Toast.makeText(this, "CRASH saat pindah gambar: ${e.message}", Toast.LENGTH_LONG).show()
-        }
+        saveLabels()
+        loadImage(currentIndex + direction)
     }
 
     private fun saveLabels() {
         try {
+            val takeFlags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+            contentResolver.takePersistableUriPermission(folderUri!!, takeFlags)
+
             val boxes = drawingView.getBoxes()
             val currentImageUri = imageUris[currentIndex]
             
@@ -162,54 +158,45 @@ class LabelingActivity : AppCompatActivity() {
                 }
             }
             
-            val baseName = imageName.substringBeforeLast(".")
+            val baseName = imageName.substringBeforeLast(".").replace(Regex("[^a-zA-Z0-9_-]"), "_")
             val txtFileName = "$baseName.txt"
             val xmlFileName = "$baseName.xml"
             
-            val treeDocId = DocumentsContract.getTreeDocumentId(folderUri!!)
-            val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(folderUri!!, treeDocId)
-            
-            val projection = arrayOf(
-                DocumentsContract.Document.COLUMN_DOCUMENT_ID,
-                DocumentsContract.Document.COLUMN_DISPLAY_NAME
-            )
-            
-            var txtDocId: String? = null
-            var xmlDocId: String? = null
-            
-            contentResolver.query(childrenUri, projection, null, null, null)?.use { cursor ->
-                val idIndex = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
-                val nameIndex = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
+            val treeDoc = DocumentFile.fromTreeUri(this, folderUri!!) 
+                ?: throw Exception("Gagal mengakses folder. Izin mungkin dicabut.")
+
+            val saveFile = { fileName: String, content: String, mimeType: String ->
+                val oldFile = treeDoc.findFile(fileName)
+                if (oldFile != null && oldFile.exists()) {
+                    oldFile.delete()
+                }
                 
-                while (cursor.moveToNext()) {
-                    val docName = cursor.getString(nameIndex)
-                    val docId = cursor.getString(idIndex)
-                    if (docName == txtFileName) txtDocId = docId
-                    if (docName == xmlFileName) xmlDocId = docId
+                val newFile = treeDoc.createFile(mimeType, fileName)
+                if (newFile != null) {
+                    contentResolver.openOutputStream(newFile.uri, "wt")?.use { os ->
+                        os.write(content.toByteArray())
+                    }
+                } else {
+                    throw Exception("Gagal membuat file: $fileName")
                 }
             }
-            
+
             val yoloContent = Utils().generateYoloFormat(boxes, imgWidth, imgHeight)
             val xmlContent = Utils().generateXml("dataset", imageName, "", "Unknown", imgWidth, imgHeight, boxes)
             
-            val writeFile = { fileName: String, existingDocId: String?, content: String, mimeType: String ->
-                val fileUri = if (existingDocId != null) {
-                    DocumentsContract.buildDocumentUriUsingTree(folderUri!!, existingDocId)
-                } else {
-                    DocumentsContract.createDocument(contentResolver, folderUri!!, mimeType, fileName)
-                }
-                
-                if (fileUri != null) {
-                    contentResolver.openOutputStream(fileUri, "wt")?.use { os ->
-                        os.write(content.toByteArray())
-                    }
-                }
-            }
+            saveFile(txtFileName, yoloContent, "text/plain")
+            saveFile(xmlFileName, xmlContent, "application/xml")
             
-            writeFile(txtFileName, txtDocId, yoloContent, "text/plain")
-            writeFile(xmlFileName, xmlDocId, xmlContent, "application/xml")
+            Toast.makeText(this, "Label berhasil disimpan!", Toast.LENGTH_SHORT).show()
+            
         } catch (e: Exception) {
-            Toast.makeText(this, "CRASH saat simpan: ${e.message}", Toast.LENGTH_LONG).show()
+            val log = android.util.Log.getStackTraceString(e)
+            try {
+                val crashFile = File(getExternalFilesDir(null), "crash_log.txt")
+                crashFile.writeText("=== SAVE CRASH LOG ===\n$log")
+            } catch (ex: Exception) { }
+            
+            Toast.makeText(this, "❌ Gagal simpan: ${e.message}", Toast.LENGTH_LONG).show()
         }
     }
 }
