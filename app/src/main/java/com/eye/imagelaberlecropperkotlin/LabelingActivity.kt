@@ -59,8 +59,9 @@ class LabelingActivity : AppCompatActivity() {
             findViewById<Button>(R.id.btn_next).setOnClickListener { 
                 if (currentIndex < imageUris.size - 1) saveAndMove(1) 
             }
+            // ✅ Hanya tampilkan Toast saat klik tombol Simpan manual
             findViewById<Button>(R.id.btn_save).setOnClickListener { 
-                saveLabels()
+                saveLabels(showToast = true)
             }
 
             drawingView.onBoxDrawn = { rect -> showClassDialog(rect) }
@@ -126,20 +127,25 @@ class LabelingActivity : AppCompatActivity() {
             }
             
             dialog.show()
-            input.requestFocus()
-            val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
-            imm.showSoftInput(input, InputMethodManager.SHOW_IMPLICIT)
+            
+            // ✅ FIX KEYBOARD: Gunakan post() agar view sudah siap dirender sebelum meminta fokus
+            input.post {
+                input.requestFocus()
+                val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+                imm.showSoftInput(input, InputMethodManager.SHOW_IMPLICIT)
+            }
         } catch (e: Exception) {
             Toast.makeText(this, "CRASH Dialog: ${e.message}", Toast.LENGTH_LONG).show()
         }
     }
 
     private fun saveAndMove(direction: Int) {
-        saveLabels()
+        // ✅ Jangan tampilkan Toast saat navigasi Prev/Next
+        saveLabels(showToast = false)
         loadImage(currentIndex + direction)
     }
 
-    private fun saveLabels() {
+    private fun saveLabels(showToast: Boolean = true) {
         try {
             val takeFlags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
             contentResolver.takePersistableUriPermission(folderUri!!, takeFlags)
@@ -188,7 +194,10 @@ class LabelingActivity : AppCompatActivity() {
             saveFile(txtFileName, yoloContent, "text/plain")
             saveFile(xmlFileName, xmlContent, "application/xml")
             
-            Toast.makeText(this, "Label berhasil disimpan!", Toast.LENGTH_SHORT).show()
+            // ✅ Hanya munculkan Toast jika showToast = true
+            if (showToast) {
+                Toast.makeText(this, "✅ Label berhasil disimpan!", Toast.LENGTH_SHORT).show()
+            }
             
         } catch (e: Exception) {
             val log = android.util.Log.getStackTraceString(e)
@@ -197,7 +206,7 @@ class LabelingActivity : AppCompatActivity() {
                 crashFile.writeText("=== SAVE CRASH LOG ===\n$log")
             } catch (ex: Exception) { }
             
-            Toast.makeText(this, "Gagal simpan: ${e.message}", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "❌ Gagal simpan: ${e.message}", Toast.LENGTH_LONG).show()
         }
     }
 }
